@@ -44,6 +44,7 @@ export default function Game() {
   const [ammoNapalm, setAmmoNapalm] = useState(3)
   const [ammoNuke, setAmmoNuke] = useState(1)
   const [shootHover, setShootHover] = useState<Set<string>>(new Set())
+  const [isBonusShot, setIsBonusShot] = useState(false)
 
   // czas rozpoczęcia fazy playing
   const gameStartedAt = useRef<number | null>(null)
@@ -75,6 +76,11 @@ export default function Game() {
       gameStartedAt.current = Date.now()
     }
   }, [game?.status])
+
+  // reset bonus strzału gdy tura przechodzi na przeciwnika
+  useEffect(() => {
+    if (!isMyTurn) setIsBonusShot(false)
+  }, [isMyTurn])
 
   // reset timera przy zmianie tury
   useEffect(() => {
@@ -362,8 +368,15 @@ export default function Game() {
 
     const allSunk = board.ships.length > 0 && board.ships.every((s) => s.isSunk)
     if (allSunk) {
+      setIsBonusShot(false)
       await supabase.from('games').update({ status: 'finished', winner: playerId }).eq('id', id)
+    } else if (anyHit && !isBonusShot) {
+      // trafienie w zwykłej turze → bonus strzał (tura nie zmienia się)
+      setIsBonusShot(true)
+      showToast('Trafienie! Dodatkowy strzał 🎯')
     } else {
+      // pudło lub bonus strzał już wykorzystany → zmień turę
+      setIsBonusShot(false)
       const nextTurn = isPlayer1 ? game!.player2Id : game!.player1Id
       await supabase.from('games').update({ current_turn: nextTurn }).eq('id', id)
     }
@@ -373,9 +386,12 @@ export default function Game() {
     if (!game) return
     if (game.status === 'waiting') setStatusMsg(`Kod gry: ${game.code} — czekaj na przeciwnika`)
     else if (game.status === 'placing') setStatusMsg(amIReady ? 'Czekasz na przeciwnika...' : 'Rozmieść swoje statki')
-    else if (game.status === 'playing') setStatusMsg(isMyTurn ? 'Twoja tura — strzelaj!' : 'Tura przeciwnika...')
+    else if (game.status === 'playing') {
+      if (isMyTurn && isBonusShot) setStatusMsg('Bonus strzał! 🎯')
+      else setStatusMsg(isMyTurn ? 'Twoja tura — strzelaj!' : 'Tura przeciwnika...')
+    }
     else if (game.status === 'finished') setStatusMsg('')
-  }, [game, isMyTurn, amIReady])
+  }, [game, isMyTurn, amIReady, isBonusShot])
 
   if (!game) {
     return (
