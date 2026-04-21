@@ -39,6 +39,12 @@ export default function Game() {
   const [explosionAt, setExplosionAt] = useState<{ x: number; y: number } | null>(null)
   const [timeLeft, setTimeLeft] = useState(30)
 
+  type AmmoType = 'normal' | 'napalm' | 'nuke'
+  const [selectedAmmo, setSelectedAmmo] = useState<AmmoType>('normal')
+  const [ammoNapalm, setAmmoNapalm] = useState(3)
+  const [ammoNuke, setAmmoNuke] = useState(1)
+  const [shootHover, setShootHover] = useState<Set<string>>(new Set())
+
   // czas rozpoczęcia fazy playing
   const gameStartedAt = useRef<number | null>(null)
   // śledzenie zatopionych statków przeciwnika żeby wykryć nowe zatopienia
@@ -297,22 +303,64 @@ export default function Game() {
     await supabase.from('games').update({ [field]: true }).eq('id', id)
   }
 
+  function getAmmoCells(x: number, y: number, ammo: 'normal' | 'napalm' | 'nuke'): Cell[] {
+    if (ammo === 'napalm') return [{ x: x - 1, y }, { x, y }, { x: x + 1, y }, { x: x + 2, y }]
+    if (ammo === 'nuke')   return [{ x, y }, { x: x + 1, y }, { x, y: y + 1 }, { x: x + 1, y: y + 1 }]
+    return [{ x, y }]
+  }
+
+  function handleShootHover(x: number, y: number) {
+    if (!isMyTurn) return
+    const cells = getAmmoCells(x, y, selectedAmmo)
+      .filter((c) => c.x >= 0 && c.x < 10 && c.y >= 0 && c.y < 10)
+    setShootHover(new Set(cells.map((c) => `${c.x},${c.y}`)))
+  }
+
   async function handleShoot(x: number, y: number) {
-    if (!isMyTurn || !canShoot(opponentBoard, x, y)) return
+    if (!isMyTurn) return
 
-    const { isHit, board: newOppBoard } = applyMove(opponentBoard, x, y)
-    setOpponentBoard(newOppBoard)
+    // sprawdź limit amunicji
+    if (selectedAmmo === 'napalm' && ammoNapalm <= 0) return
+    if (selectedAmmo === 'nuke'   && ammoNuke   <= 0) return
 
-    // efekt wybuchu i trzęsienia ekranu przy trafieniu
-    if (isHit) {
-      setExplosionAt({ x, y })
+    // wyznacz pola do trafienia — w granicach planszy, jeszcze nie strzelane
+    const targets = getAmmoCells(x, y, selectedAmmo).filter(
+      (c) => c.x >= 0 && c.x < 10 && c.y >= 0 && c.y < 10 && canShoot(opponentBoard, c.x, c.y),
+    )
+    if (targets.length === 0) return
+
+    // zużyj amunicję
+    if (selectedAmmo === 'napalm') setAmmoNapalm((n) => n - 1)
+    if (selectedAmmo === 'nuke')   setAmmoNuke((n) => n - 1)
+    setSelectedAmmo('normal')
+    setShootHover(new Set())
+
+    // aplikuj wszystkie trafienia lokalnie
+    let board = opponentBoard
+    let anyHit = false
+    let firstHit: Cell | null = null
+    for (const c of targets) {
+      const result = applyMove(board, c.x, c.y)
+      board = result.board
+      if (result.isHit && !firstHit) { firstHit = c; anyHit = true }
+    }
+    setOpponentBoard(board)
+
+    // efekty przy trafieniu
+    if (anyHit && firstHit) {
+      setExplosionAt(firstHit)
       setHitShake(true)
       setTimeout(() => { setExplosionAt(null); setHitShake(false) }, 550)
     }
 
-    await supabase.from('moves').insert({ game_id: id, player_id: playerId, x, y, is_hit: isHit })
+    // zapisz ruchy do bazy (każde pole osobno)
+    for (const c of targets) {
+      const isHit = board.grid[c.y][c.x] === 'hit' || board.grid[c.y][c.x] === 'sunk' ||
+        opponentBoard.grid[c.y][c.x] === 'ship'
+      await supabase.from('moves').insert({ game_id: id, player_id: playerId, x: c.x, y: c.y, is_hit: isHit })
+    }
 
-    const allSunk = newOppBoard.ships.length > 0 && newOppBoard.ships.every((s) => s.isSunk)
+    const allSunk = board.ships.length > 0 && board.ships.every((s) => s.isSunk)
     if (allSunk) {
       await supabase.from('games').update({ status: 'finished', winner: playerId }).eq('id', id)
     } else {
@@ -434,6 +482,43 @@ export default function Game() {
         <p className="relative z-10 text-sm tracking-wider text-white/50">{statusMsg}</p>
       )}
 
+      {/* panel amunicji */}
+      {game.status === 'playing' && !isFinished && (
+        <div className="relative z-10 flex gap-2">
+          {(
+            [
+              { type: 'normal' as const, icon: '🎯', label: 'Normalna', count: null },
+              { type: 'napalm' as const, icon: '🔥', label: 'Napalm',   count: ammoNapalm },
+              { type: 'nuke'   as const, icon: '☢️', label: 'Nuke',     count: ammoNuke },
+            ] as const
+          ).map(({ type, icon, label, count }) => {
+            const outOfAmmo = count !== null && count <= 0
+            const isSelected = selectedAmmo === type
+            return (
+              <button
+                key={type}
+                onClick={() => setSelectedAmmo(outOfAmmo ? 'normal' : type)}
+                disabled={outOfAmmo || !isMyTurn}
+                className={[
+                  'flex flex-col items-center gap-0.5 rounded-xl border px-3 py-2 text-xs transition',
+                  isSelected
+                    ? 'border-yellow-400/50 bg-yellow-500/20 text-yellow-200'
+                    : outOfAmmo
+                      ? 'border-white/5 bg-white/3 text-white/20 cursor-not-allowed'
+                      : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10',
+                ].join(' ')}
+              >
+                <span className="text-base leading-none">{icon}</span>
+                <span className="tracking-wider">{label}</span>
+                {count !== null && (
+                  <span className={outOfAmmo ? 'text-white/20' : 'text-white/40'}>×{count}</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* boards */}
       <div className="relative z-10 flex flex-wrap items-start justify-center gap-8">
         {isPlacing && !amIReady && <ShipPanel shipsPlaced={shipsPlaced} onRandomize={handleRandomize} />}
@@ -472,6 +557,10 @@ export default function Game() {
           <Board
             grid={opponentBoard.grid}
             onCellClick={isMyTurn ? handleShoot : undefined}
+            onCellHover={isMyTurn ? handleShootHover : undefined}
+            onMouseLeave={() => setShootHover(new Set())}
+            highlightCells={isMyTurn ? shootHover : undefined}
+            highlightValid
             disabled={!isMyTurn}
             hideShips
             explosionAt={explosionAt}
