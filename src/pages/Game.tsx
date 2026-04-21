@@ -69,6 +69,29 @@ export default function Game() {
     }
   }, [game?.status])
 
+  // ładuj statki przeciwnika gdy gra przechodzi na 'playing' (wcześniej mogło ich nie być)
+  useEffect(() => {
+    if (game?.status !== 'playing' || !game.player2Id) return
+    const opponentId = game.player1Id === playerId ? game.player2Id : game.player1Id
+    setOpponentBoard((prev) => {
+      if (prev.ships.length > 0) return prev // już załadowane
+      // załaduj asynchronicznie
+      supabase
+        .from('ships')
+        .select()
+        .eq('game_id', id)
+        .eq('player_id', opponentId)
+        .then(({ data }) => {
+          if (!data?.length) return
+          let b = createEmptyBoard()
+          for (const s of data) b = placeShip(b, s.cells as Cell[], s.id)
+          oppSunksInitialized.current = false // reset żeby nie pokazać fałszywego toastu
+          setOpponentBoard(b)
+        })
+      return prev
+    })
+  }, [game?.status])
+
   // wykrywaj nowe zatopienia statków przeciwnika
   useEffect(() => {
     if (!oppSunksInitialized.current) {
