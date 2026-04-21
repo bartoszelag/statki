@@ -64,9 +64,22 @@ export default function Game() {
     const gameSub = supabase
       .channel(`game:${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${id}` },
-        (payload) => {
+        async (payload) => {
           const g = payload.new as Record<string, unknown>
           setGame(rowToGame(g))
+
+          // gdy obaj gracze są gotowi, player1 przełącza grę na 'playing'
+          if (
+            g.status === 'placing' &&
+            g.player1_ready === true &&
+            g.player2_ready === true &&
+            g.player1_id === playerId
+          ) {
+            await supabase
+              .from('games')
+              .update({ status: 'playing', current_turn: g.player1_id })
+              .eq('id', id)
+          }
         })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'moves', filter: `game_id=eq.${id}` },
         (payload) => {
@@ -271,14 +284,12 @@ export default function Game() {
           })()}
         </div>
 
-        {/* plansza przeciwnika z trybem kłamcy */}
         {(game.status === 'playing' || game.status === 'finished') && (
           <Board
             grid={opponentBoard.grid}
             onCellClick={isMyTurn ? handleShoot : undefined}
             disabled={!isMyTurn}
             hideShips
-            liarMode
             label="Przeciwnik"
           />
         )}
