@@ -13,6 +13,7 @@ import {
 import Board from '../components/Board'
 import ShipPanel from '../components/ShipPanel'
 import WeatherOverlay, { computeWeather } from '../components/WeatherOverlay'
+import Chat from '../components/Chat'
 import { SHIP_CONFIGS, type Game, type Cell } from '../types/game'
 
 export default function Game() {
@@ -33,6 +34,7 @@ export default function Game() {
   const [statusMsg, setStatusMsg] = useState('')
   const [shipsPlaced, setShipsPlaced] = useState<Record<number, number>>({})
   const [toast, setToast] = useState<string | null>(null)
+  const [hitShake, setHitShake] = useState(false)
 
   // czas rozpoczęcia fazy playing
   const gameStartedAt = useRef<number | null>(null)
@@ -234,6 +236,12 @@ export default function Game() {
     const { isHit, board: newOppBoard } = applyMove(opponentBoard, x, y)
     setOpponentBoard(newOppBoard)
 
+    // efekt trzęsienia ekranu przy trafieniu
+    if (isHit) {
+      setHitShake(true)
+      setTimeout(() => setHitShake(false), 450)
+    }
+
     await supabase.from('moves').insert({ game_id: id, player_id: playerId, x, y, is_hit: isHit })
 
     const allSunk = newOppBoard.ships.length > 0 && newOppBoard.ships.every((s) => s.isSunk)
@@ -280,6 +288,7 @@ export default function Game() {
       className={[
         'relative flex min-h-screen w-full flex-col items-center justify-center gap-6 overflow-hidden px-4 py-8',
         weatherState === 'hurricane' ? 'weather-hurricane' : '',
+        hitShake ? 'hit-shake' : '',
       ].join(' ')}
       style={{ background: weatherBg[weatherState] }}
     >
@@ -390,6 +399,11 @@ export default function Game() {
             hideShips
             label="Przeciwnik"
           />
+        )}
+
+        {/* czat widoczny podczas gry */}
+        {(game.status === 'playing' || isFinished) && game.player2Id && (
+          <Chat gameId={id!} playerId={playerId} />
         )}
       </div>
 

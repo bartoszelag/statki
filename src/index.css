@@ -104,3 +104,17 @@
 .weather-hurricane {
   animation: screen-shake 0.4s linear infinite;
 }
+
+@keyframes hit-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  15%       { transform: translate(-5px, -3px) rotate(-0.5deg); }
+  30%       { transform: translate(5px, 3px) rotate(0.5deg); }
+  45%       { transform: translate(-4px, 2px) rotate(-0.3deg); }
+  60%       { transform: translate(4px, -2px) rotate(0.3deg); }
+  75%       { transform: translate(-2px, 1px); }
+  90%       { transform: translate(2px, -1px); }
+}
+
+.hit-shake {
+  animation: hit-shake 0.45s ease-out;
+}
