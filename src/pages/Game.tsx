@@ -37,6 +37,7 @@ export default function Game() {
   const [toast, setToast] = useState<string | null>(null)
   const [hitShake, setHitShake] = useState(false)
   const [explosionAt, setExplosionAt] = useState<{ x: number; y: number } | null>(null)
+  const [timeLeft, setTimeLeft] = useState(30)
 
   // czas rozpoczęcia fazy playing
   const gameStartedAt = useRef<number | null>(null)
@@ -68,6 +69,25 @@ export default function Game() {
       gameStartedAt.current = Date.now()
     }
   }, [game?.status])
+
+  // reset timera przy zmianie tury
+  useEffect(() => {
+    if (game?.status === 'playing') setTimeLeft(30)
+  }, [game?.currentTurn])
+
+  // odliczanie sekundy po sekundzie
+  useEffect(() => {
+    if (game?.status !== 'playing' || timeLeft <= 0) return
+    const t = setTimeout(() => setTimeLeft((prev) => prev - 1), 1000)
+    return () => clearTimeout(t)
+  }, [timeLeft, game?.status])
+
+  // automatyczna zmiana tury gdy czas minął — tylko aktywny gracz wykonuje
+  useEffect(() => {
+    if (!isMyTurn || game?.status !== 'playing' || timeLeft !== 0) return
+    const nextTurn = isPlayer1 ? game!.player2Id : game!.player1Id
+    supabase.from('games').update({ current_turn: nextTurn }).eq('id', id)
+  }, [timeLeft])
 
   // ładuj statki przeciwnika gdy gra przechodzi na 'playing' (wcześniej mogło ich nie być)
   useEffect(() => {
@@ -395,14 +415,19 @@ export default function Game() {
         </span>
       </div>
 
-      {/* status */}
-      {statusMsg && (
-        <p className={[
-          'relative z-10 text-sm tracking-wider',
-          isMyTurn ? 'text-blue-300' : 'text-white/50',
-        ].join(' ')}>
-          {statusMsg}
-        </p>
+      {/* status + timer */}
+      {game.status === 'playing' && (
+        <div className="relative z-10 flex items-center gap-4">
+          {statusMsg && (
+            <p className={['text-sm tracking-wider', isMyTurn ? 'text-blue-300' : 'text-white/50'].join(' ')}>
+              {statusMsg}
+            </p>
+          )}
+          <TurnTimer timeLeft={timeLeft} isMyTurn={isMyTurn} />
+        </div>
+      )}
+      {game.status !== 'playing' && statusMsg && (
+        <p className="relative z-10 text-sm tracking-wider text-white/50">{statusMsg}</p>
       )}
 
       {/* boards */}
@@ -463,6 +488,40 @@ export default function Game() {
         ← lobby
       </button>
     </div>
+  )
+}
+
+const TIMER_MAX = 30
+const R = 20
+const CIRCUMFERENCE = 2 * Math.PI * R
+
+function TurnTimer({ timeLeft, isMyTurn }: { timeLeft: number; isMyTurn: boolean }) {
+  const offset = CIRCUMFERENCE - (timeLeft / TIMER_MAX) * CIRCUMFERENCE
+  const color = timeLeft > 10 ? '#60a5fa' : timeLeft > 5 ? '#fb923c' : '#f87171'
+  return (
+    <svg width="54" height="54" viewBox="0 0 54 54">
+      <circle cx="27" cy="27" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
+      <circle
+        cx="27" cy="27" r={R}
+        fill="none"
+        stroke={isMyTurn ? color : 'rgba(255,255,255,0.2)'}
+        strokeWidth="3"
+        strokeDasharray={CIRCUMFERENCE}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform="rotate(-90 27 27)"
+        style={{ transition: 'stroke-dashoffset 0.9s linear, stroke 0.3s' }}
+      />
+      <text
+        x="27" y="32"
+        textAnchor="middle"
+        fontSize="13"
+        fontFamily="monospace"
+        fill={isMyTurn ? color : 'rgba(255,255,255,0.3)'}
+      >
+        {timeLeft}
+      </text>
+    </svg>
   )
 }
 
