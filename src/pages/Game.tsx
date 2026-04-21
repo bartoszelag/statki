@@ -49,14 +49,14 @@ export default function Game() {
   const isMyTurn = game?.status === 'playing' && game.currentTurn === playerId
   const amIReady = game ? (isPlayer1 ? game.player1Ready : game.player2Ready) : false
 
-  const myDamage = myBoard.grid.flat().filter((c) => c === 'hit' || c === 'sunk').length
+  // liczba moich strzałów i strzałów przeciwnika — podstawa pogody
+  const myShots = opponentBoard.grid.flat().filter((c) => c !== 'empty' && c !== 'ship').length
+  const opponentShots = myBoard.grid.flat().filter((c) => c !== 'empty' && c !== 'ship').length
+  const totalShots = myShots + opponentShots
   const weatherState =
     game?.status === 'playing' || game?.status === 'finished'
-      ? computeWeather(myDamage)
+      ? computeWeather(totalShots)
       : 'calm'
-
-  // liczba moich strzałów – wszystkie pola na planszy przeciwnika które nie są puste/statek
-  const myShots = opponentBoard.grid.flat().filter((c) => c !== 'empty' && c !== 'ship').length
 
   function showToast(msg: string) {
     setToast(msg)
@@ -342,9 +342,11 @@ export default function Game() {
   const iWon = game.winner === playerId
 
   const weatherBg: Record<string, string> = {
-    calm: 'linear-gradient(160deg, #020b18 0%, #071525 40%, #0a1a30 70%, #010810 100%)',
-    storm: 'linear-gradient(160deg, #020d10 0%, #051520 40%, #071825 70%, #020b0e 100%)',
+    calm:      'linear-gradient(160deg, #020b18 0%, #071525 40%, #0a1a30 70%, #010810 100%)',
+    storm:     'linear-gradient(160deg, #020d10 0%, #051520 40%, #071825 70%, #020b0e 100%)',
     hurricane: 'linear-gradient(160deg, #030408 0%, #07080f 40%, #0a0b14 70%, #020308 100%)',
+    tornado:   'linear-gradient(160deg, #0d0a04 0%, #1a1205 40%, #100d04 70%, #070502 100%)',
+    blizzard:  'linear-gradient(160deg, #060c18 0%, #0c1428 40%, #0a1020 70%, #04080f 100%)',
   }
 
   // czas trwania gry
@@ -356,6 +358,8 @@ export default function Game() {
       className={[
         'relative flex min-h-screen w-full flex-col items-center justify-center gap-6 overflow-hidden px-4 py-8',
         weatherState === 'hurricane' ? 'weather-hurricane' : '',
+        weatherState === 'tornado'   ? 'weather-tornado'   : '',
+        weatherState === 'blizzard'  ? 'weather-blizzard'  : '',
         hitShake ? 'hit-shake' : '',
       ].join(' ')}
       style={{ background: weatherBg[weatherState] }}

@@ -138,3 +138,40 @@
 .exp-core  { animation: exp-core  0.55s ease-out forwards; }
 .exp-ring  { animation: exp-ring  0.5s  ease-out forwards; }
 .exp-spark { animation: exp-spark 0.45s ease-out forwards; }
+
+@keyframes debris-orbit {
+  from { transform: rotate(var(--orbit-start)) translateX(var(--orbit-r)) rotate(calc(var(--orbit-start) * -1)); }
+  to   { transform: rotate(calc(var(--orbit-start) + 360deg)) translateX(var(--orbit-r)) rotate(calc((var(--orbit-start) + 360deg) * -1)); }
+}
+
+.debris-particle { animation: debris-orbit linear infinite; }
+
+@keyframes snow-fall {
+  0%   { transform: translateY(-10px) translateX(0)    rotate(0deg);   opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 0.7; }
+  100% { transform: translateY(105vh) translateX(-80px) rotate(720deg); opacity: 0; }
+}
+
+.snow-flake { animation: snow-fall linear infinite; }
+
+@keyframes tornado-shake {
+  0%, 100% { transform: translate(0, 0)     rotate(0deg);    }
+  10%       { transform: translate(-4px, 2px) rotate(-0.4deg); }
+  25%       { transform: translate(5px, -3px) rotate(0.5deg);  }
+  40%       { transform: translate(-3px, 4px) rotate(-0.3deg); }
+  55%       { transform: translate(4px, -2px) rotate(0.4deg);  }
+  70%       { transform: translate(-5px, 3px) rotate(-0.5deg); }
+  85%       { transform: translate(3px, -4px) rotate(0.3deg);  }
+}
+
+.weather-tornado { animation: tornado-shake 0.35s linear infinite; }
+
+@keyframes blizzard-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20%       { transform: translate(-1px, 1px); }
+  50%       { transform: translate(1px, -1px); }
+  80%       { transform: translate(-1px, 0);   }
+}
+
+.weather-blizzard { animation: blizzard-shake 0.8s linear infinite; }
