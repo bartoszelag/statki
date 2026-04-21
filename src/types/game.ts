@@ -50,10 +50,10 @@ export interface ShipConfig {
 }
 
 export const SHIP_CONFIGS: ShipConfig[] = [
+  { size: 5, count: 1, label: 'Lotniskowiec' },
   { size: 4, count: 1, label: 'Pancernik' },
   { size: 3, count: 2, label: 'Krążownik' },
-  { size: 2, count: 3, label: 'Niszczyciel' },
-  { size: 1, count: 4, label: 'Łódź podwodna' },
+  { size: 2, count: 1, label: 'Niszczyciel' },
 ]
 
 export const BOARD_SIZE = 10

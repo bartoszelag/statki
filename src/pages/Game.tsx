@@ -12,6 +12,7 @@ import {
 } from '../lib/gameLogic'
 import Board from '../components/Board'
 import ShipPanel from '../components/ShipPanel'
+import WeatherOverlay, { computeWeather } from '../components/WeatherOverlay'
 import { SHIP_CONFIGS, type Game, type Cell } from '../types/game'
 
 export default function Game() {
@@ -23,7 +24,7 @@ export default function Game() {
     game, setGame,
     myBoard, setMyBoard,
     opponentBoard, setOpponentBoard,
-    placingOrientation, setSelectedShipSize, selectedShipSize,
+    placingOrientation, setPlacingOrientation, setSelectedShipSize, selectedShipSize,
     reset,
   } = useGameStore()
 
@@ -35,6 +36,24 @@ export default function Game() {
   const isPlayer1 = game?.player1Id === playerId
   const isMyTurn = game?.status === 'playing' && game.currentTurn === playerId
   const amIReady = game ? (isPlayer1 ? game.player1Ready : game.player2Ready) : false
+
+  // pogoda zależy od zniszczeń własnej planszy
+  const myDamage = myBoard.grid.flat().filter((c) => c === 'hit' || c === 'sunk').length
+  const weatherState = game?.status === 'playing' || game?.status === 'finished'
+    ? computeWeather(myDamage)
+    : 'calm'
+
+  // klawisz R obraca statek podczas rozmieszczania
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'r' || e.key === 'R') {
+        setPlacingOrientation(placingOrientation === 'horizontal' ? 'vertical' : 'horizontal')
+        setHoverCells(new Set())
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [placingOrientation])
 
   // load game and subscribe to realtime
   useEffect(() => {
@@ -132,13 +151,14 @@ export default function Game() {
 
     await supabase.from('ships').insert({ id: shipId, game_id: id, player_id: playerId, cells, size: selectedShipSize })
 
-    // check if all ships placed
     const allPlaced = SHIP_CONFIGS.every((c) => (newPlaced[c.size] ?? 0) >= c.count)
-    if (allPlaced) {
-      setSelectedShipSize(null)
-      const field = isPlayer1 ? 'player1_ready' : 'player2_ready'
-      await supabase.from('games').update({ [field]: true }).eq('id', id)
-    }
+    if (allPlaced) setSelectedShipSize(null)
+  }
+
+  async function handleReady() {
+    if (!game) return
+    const field = isPlayer1 ? 'player1_ready' : 'player2_ready'
+    await supabase.from('games').update({ [field]: true }).eq('id', id)
   }
 
   async function handleShoot(x: number, y: number) {
@@ -182,11 +202,21 @@ export default function Game() {
 
   const isPlacing = game.status === 'placing' || game.status === 'waiting'
 
+  const weatherBg: Record<string, string> = {
+    calm: 'linear-gradient(160deg, #020b18 0%, #071525 40%, #0a1a30 70%, #010810 100%)',
+    storm: 'linear-gradient(160deg, #020d10 0%, #051520 40%, #071825 70%, #020b0e 100%)',
+    hurricane: 'linear-gradient(160deg, #030408 0%, #07080f 40%, #0a0b14 70%, #020308 100%)',
+  }
+
   return (
     <div
-      className="relative flex min-h-screen w-full flex-col items-center justify-center gap-6 overflow-hidden px-4 py-8"
-      style={{ background: 'linear-gradient(160deg, #020b18 0%, #071525 40%, #0a1a30 70%, #010810 100%)' }}
+      className={[
+        'relative flex min-h-screen w-full flex-col items-center justify-center gap-6 overflow-hidden px-4 py-8',
+        weatherState === 'hurricane' ? 'weather-hurricane' : '',
+      ].join(' ')}
+      style={{ background: weatherBg[weatherState] }}
     >
+      <WeatherOverlay state={weatherState} />
       {/* header */}
       <div className="flex items-center gap-6">
         <span className="shimmer-text text-xl font-light tracking-[0.25em]">statki</span>
@@ -206,12 +236,15 @@ export default function Game() {
       </p>
 
       {/* boards */}
-      <div className="flex flex-wrap items-start justify-center gap-10">
+      <div className="flex flex-wrap items-start justify-center gap-8">
+        {/* panel boczny podczas rozmieszczania */}
+        {isPlacing && !amIReady && <ShipPanel shipsPlaced={shipsPlaced} />}
+
         {/* my board */}
         <div className="flex flex-col items-center gap-3">
           <Board
             grid={myBoard.grid}
-            disabled
+            disabled={!isPlacing || amIReady}
             label="Twoja plansza"
             onCellClick={isPlacing && !amIReady ? handlePlaceClick : undefined}
             onCellHover={isPlacing && !amIReady ? handlePlaceHover : undefined}
@@ -219,18 +252,33 @@ export default function Game() {
             highlightCells={isPlacing && !amIReady ? hoverCells : undefined}
             highlightValid={hoverValid}
           />
-          {isPlacing && !amIReady && (
-            <ShipPanel shipsPlaced={shipsPlaced} />
-          )}
+          {isPlacing && !amIReady && (() => {
+            const allPlaced = SHIP_CONFIGS.every((c) => (shipsPlaced[c.size] ?? 0) >= c.count)
+            return (
+              <button
+                onClick={handleReady}
+                disabled={!allPlaced}
+                className={[
+                  'mt-1 w-full rounded-xl border px-6 py-3 text-sm tracking-widest transition',
+                  allPlaced
+                    ? 'border-green-400/50 bg-green-500/20 text-green-300 hover:bg-green-500/30 cursor-pointer'
+                    : 'border-white/5 bg-white/5 text-white/20 cursor-not-allowed',
+                ].join(' ')}
+              >
+                GOTOWY
+              </button>
+            )
+          })()}
         </div>
 
-        {/* opponent board */}
+        {/* plansza przeciwnika z trybem kłamcy */}
         {(game.status === 'playing' || game.status === 'finished') && (
           <Board
             grid={opponentBoard.grid}
             onCellClick={isMyTurn ? handleShoot : undefined}
             disabled={!isMyTurn}
             hideShips
+            liarMode
             label="Przeciwnik"
           />
         )}

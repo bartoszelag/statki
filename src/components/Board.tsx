@@ -9,7 +9,21 @@ interface BoardProps {
   highlightValid?: boolean
   disabled?: boolean
   hideShips?: boolean
+  liarMode?: boolean
   label: string
+}
+
+// Czy to pole kłamie - deterministyczny hash, ~10% pól
+function liesAbout(x: number, y: number): boolean {
+  return (x * 13 + y * 7 + x * y * 3) % 10 === 0
+}
+
+function displayState(state: CellState, x: number, y: number, liarMode: boolean): CellState {
+  if (!liarMode) return state
+  if ((state === 'hit' || state === 'miss') && liesAbout(x, y)) {
+    return state === 'hit' ? 'miss' : 'hit'
+  }
+  return state
 }
 
 const COLS = Array.from({ length: BOARD_SIZE }, (_, i) => String.fromCharCode(65 + i))
@@ -32,6 +46,7 @@ export default function Board({
   highlightValid,
   disabled = false,
   hideShips = false,
+  liarMode = false,
   label,
 }: BoardProps) {
   return (
@@ -54,22 +69,30 @@ export default function Board({
             {row.map((cell, x) => {
               const key = `${x},${y}`
               const isHighlighted = highlightCells?.has(key)
+              const shown = displayState(cell, x, y, liarMode)
+              const isLying = liarMode && (cell === 'hit' || cell === 'miss') && liesAbout(x, y)
               return (
-                <button
-                  key={x}
-                  disabled={disabled || !onCellClick}
-                  onClick={() => onCellClick?.(x, y)}
-                  onMouseEnter={() => onCellHover?.(x, y)}
-                  className={[
-                    'h-7 w-7 rounded-sm border transition-all duration-100',
-                    isHighlighted
-                      ? highlightValid
-                        ? 'bg-blue-400/50 border-blue-400'
-                        : 'bg-red-400/50 border-red-400'
-                      : cellColor(cell, hideShips),
-                    disabled ? 'cursor-default' : 'cursor-pointer',
-                  ].join(' ')}
-                />
+                <div key={x} className="relative">
+                  <button
+                    disabled={disabled || !onCellClick}
+                    onClick={() => onCellClick?.(x, y)}
+                    onMouseEnter={() => onCellHover?.(x, y)}
+                    className={[
+                      'h-7 w-7 rounded-sm border transition-all duration-100',
+                      isHighlighted
+                        ? highlightValid
+                          ? 'bg-blue-400/50 border-blue-400'
+                          : 'bg-red-400/50 border-red-400'
+                        : cellColor(shown, hideShips),
+                      disabled ? 'cursor-default' : 'cursor-pointer',
+                    ].join(' ')}
+                  />
+                  {isLying && (
+                    <span className="pointer-events-none absolute -right-1 -top-1 text-[8px] font-bold leading-none text-yellow-300">
+                      ?
+                    </span>
+                  )}
+                </div>
               )
             })}
           </div>

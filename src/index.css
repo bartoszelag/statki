@@ -64,3 +64,43 @@
 .glow-card {
   animation: glow-pulse 4s ease-in-out infinite;
 }
+
+@keyframes rain-fall {
+  0% {
+    transform: translateY(-20px) translateX(0) rotate(15deg);
+    opacity: 0;
+  }
+  5% { opacity: 1; }
+  95% { opacity: 0.7; }
+  100% {
+    transform: translateY(105vh) translateX(-40px) rotate(15deg);
+    opacity: 0;
+  }
+}
+
+@keyframes lightning-flash {
+  0%, 82%, 84%, 86%, 100% { opacity: 0; }
+  83%, 85% { opacity: 0.12; }
+}
+
+@keyframes screen-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15%       { transform: translate(-2px, 1px); }
+  30%       { transform: translate(2px, -1px); }
+  45%       { transform: translate(-1px, 2px); }
+  60%       { transform: translate(1px, -2px); }
+  75%       { transform: translate(-2px, 1px); }
+  90%       { transform: translate(2px, 0); }
+}
+
+.rain-drop {
+  animation: rain-fall linear infinite;
+}
+
+.lightning-flash {
+  animation: lightning-flash 2.5s ease-in-out infinite;
+}
+
+.weather-hurricane {
+  animation: screen-shake 0.4s linear infinite;
+}
