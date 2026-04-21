@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase, getPlayerId } from '../lib/supabase'
 import { useGameStore } from '../store/gameStore'
@@ -32,18 +32,54 @@ export default function Game() {
   const [hoverValid, setHoverValid] = useState(false)
   const [statusMsg, setStatusMsg] = useState('')
   const [shipsPlaced, setShipsPlaced] = useState<Record<number, number>>({})
+  const [toast, setToast] = useState<string | null>(null)
+
+  // czas rozpoczęcia fazy playing
+  const gameStartedAt = useRef<number | null>(null)
+  // śledzenie zatopionych statków przeciwnika żeby wykryć nowe zatopienia
+  const prevOppSunk = useRef<Set<string>>(new Set())
+  const oppSunksInitialized = useRef(false)
 
   const isPlayer1 = game?.player1Id === playerId
   const isMyTurn = game?.status === 'playing' && game.currentTurn === playerId
   const amIReady = game ? (isPlayer1 ? game.player1Ready : game.player2Ready) : false
 
-  // pogoda zależy od zniszczeń własnej planszy
   const myDamage = myBoard.grid.flat().filter((c) => c === 'hit' || c === 'sunk').length
-  const weatherState = game?.status === 'playing' || game?.status === 'finished'
-    ? computeWeather(myDamage)
-    : 'calm'
+  const weatherState =
+    game?.status === 'playing' || game?.status === 'finished'
+      ? computeWeather(myDamage)
+      : 'calm'
 
-  // klawisz R obraca statek podczas rozmieszczania
+  // liczba moich strzałów – wszystkie pola na planszy przeciwnika które nie są puste/statek
+  const myShots = opponentBoard.grid.flat().filter((c) => c !== 'empty' && c !== 'ship').length
+
+  function showToast(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  // rejestruj czas startu gry
+  useEffect(() => {
+    if (game?.status === 'playing' && gameStartedAt.current === null) {
+      gameStartedAt.current = Date.now()
+    }
+  }, [game?.status])
+
+  // wykrywaj nowe zatopienia statków przeciwnika
+  useEffect(() => {
+    if (!oppSunksInitialized.current) {
+      oppSunksInitialized.current = true
+      prevOppSunk.current = new Set(opponentBoard.ships.filter((s) => s.isSunk).map((s) => s.id))
+      return
+    }
+    const newlySunk = opponentBoard.ships.filter(
+      (s) => s.isSunk && !prevOppSunk.current.has(s.id),
+    )
+    if (newlySunk.length > 0) showToast('Zatopiony! 💥')
+    prevOppSunk.current = new Set(opponentBoard.ships.filter((s) => s.isSunk).map((s) => s.id))
+  }, [opponentBoard])
+
+  // klawisz R obraca statek
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'r' || e.key === 'R') {
@@ -55,20 +91,21 @@ export default function Game() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [placingOrientation])
 
-  // load game and subscribe to realtime
+  // inicjalizacja i subskrypcje Realtime
   useEffect(() => {
     if (!id) return
-    loadGame()
-    loadBoards()
+    loadGameAndBoards()
 
     const gameSub = supabase
       .channel(`game:${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${id}` },
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'games', filter: `id=eq.${id}` },
         async (payload) => {
           const g = payload.new as Record<string, unknown>
           setGame(rowToGame(g))
 
-          // gdy obaj gracze są gotowi, player1 przełącza grę na 'playing'
+          // player1 przełącza na 'playing' gdy obaj gotowi
           if (
             g.status === 'placing' &&
             g.player1_ready === true &&
@@ -80,8 +117,11 @@ export default function Game() {
               .update({ status: 'playing', current_turn: g.player1_id })
               .eq('id', id)
           }
-        })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'moves', filter: `game_id=eq.${id}` },
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'moves', filter: `game_id=eq.${id}` },
         (payload) => {
           const move = payload.new as Record<string, unknown>
           const isOpponentMove = move.player_id !== playerId
@@ -90,36 +130,51 @@ export default function Game() {
           } else {
             setOpponentBoard((prev) => applyMove(prev, move.x as number, move.y as number).board)
           }
-        })
+        },
+      )
       .subscribe()
 
-    return () => { supabase.removeChannel(gameSub); reset() }
+    return () => {
+      supabase.removeChannel(gameSub)
+      reset()
+    }
   }, [id])
 
-  async function loadGame() {
+  async function loadGameAndBoards() {
     const { data } = await supabase.from('games').select().eq('id', id).single()
     if (!data) { navigate('/'); return }
-    setGame(rowToGame(data))
-  }
+    const g = rowToGame(data)
+    setGame(g)
 
-  async function loadBoards() {
-    // load my ships
-    const { data: myShips } = await supabase.from('ships').select().eq('game_id', id).eq('player_id', playerId)
-    if (myShips?.length) {
-      let board = createEmptyBoard()
-      const placed: Record<number, number> = {}
-      for (const s of myShips) {
-        board = placeShip(board, s.cells as Cell[], s.id)
-        placed[s.size] = (placed[s.size] ?? 0) + 1
-      }
-      setMyBoard(board)
-      setShipsPlaced(placed)
+    const opponentId = g.player1Id === playerId ? g.player2Id : g.player1Id
+
+    // ładuj moje statki
+    const { data: myShips } = await supabase
+      .from('ships').select().eq('game_id', id).eq('player_id', playerId)
+
+    let myB = createEmptyBoard()
+    const placed: Record<number, number> = {}
+    for (const s of myShips ?? []) {
+      myB = placeShip(myB, s.cells as Cell[], s.id)
+      placed[s.size] = (placed[s.size] ?? 0) + 1
     }
+    setMyBoard(myB)
+    setShipsPlaced(placed)
 
-    // load moves and apply on top of ship boards
-    const { data: moves } = await supabase.from('moves').select().eq('game_id', id)
+    // ładuj statki przeciwnika (potrzebne do wykrywania zatopionych, ukryte wizualnie)
+    let oppB = createEmptyBoard()
+    if (opponentId) {
+      const { data: oppShips } = await supabase
+        .from('ships').select().eq('game_id', id).eq('player_id', opponentId)
+      for (const s of oppShips ?? []) {
+        oppB = placeShip(oppB, s.cells as Cell[], s.id)
+      }
+    }
+    setOpponentBoard(oppB)
+
+    // zastosuj istniejące ruchy
+    const { data: moves } = await supabase.from('moves').select().eq('game_id', id).order('created_at')
     if (moves?.length) {
-      // rebuild from fresh so we don't use stale closure state
       setMyBoard((prev) => {
         let b = prev
         for (const m of moves) {
@@ -137,7 +192,6 @@ export default function Game() {
     }
   }
 
-  // ship placement hover
   function handlePlaceHover(x: number, y: number) {
     if (!selectedShipSize) return
     const cells = getShipCells(x, y, selectedShipSize, placingOrientation)
@@ -156,16 +210,16 @@ export default function Game() {
     if (alreadyPlaced >= config.count) return
 
     const shipId = crypto.randomUUID()
-    const newBoard = placeShip(myBoard, cells, shipId)
-    setMyBoard(newBoard)
+    setMyBoard(placeShip(myBoard, cells, shipId))
 
     const newPlaced = { ...shipsPlaced, [selectedShipSize]: alreadyPlaced + 1 }
     setShipsPlaced(newPlaced)
 
     await supabase.from('ships').insert({ id: shipId, game_id: id, player_id: playerId, cells, size: selectedShipSize })
 
-    const allPlaced = SHIP_CONFIGS.every((c) => (newPlaced[c.size] ?? 0) >= c.count)
-    if (allPlaced) setSelectedShipSize(null)
+    if (SHIP_CONFIGS.every((c) => (newPlaced[c.size] ?? 0) >= c.count)) {
+      setSelectedShipSize(null)
+    }
   }
 
   async function handleReady() {
@@ -182,27 +236,21 @@ export default function Game() {
 
     await supabase.from('moves').insert({ game_id: id, player_id: playerId, x, y, is_hit: isHit })
 
-    const nextTurn = isPlayer1 ? game!.player2Id : game!.player1Id
-    const allSunk = newOppBoard.ships.every((s) => s.isSunk) && newOppBoard.ships.length > 0
+    const allSunk = newOppBoard.ships.length > 0 && newOppBoard.ships.every((s) => s.isSunk)
     if (allSunk) {
       await supabase.from('games').update({ status: 'finished', winner: playerId }).eq('id', id)
     } else {
+      const nextTurn = isPlayer1 ? game!.player2Id : game!.player1Id
       await supabase.from('games').update({ current_turn: nextTurn }).eq('id', id)
     }
   }
 
-  // status message
   useEffect(() => {
     if (!game) return
-    if (game.status === 'waiting') {
-      setStatusMsg(`Kod gry: ${game.code} — czekaj na przeciwnika`)
-    } else if (game.status === 'placing') {
-      setStatusMsg(amIReady ? 'Czekasz na przeciwnika...' : 'Rozmieść swoje statki')
-    } else if (game.status === 'playing') {
-      setStatusMsg(isMyTurn ? 'Twoja tura — strzelaj!' : 'Tura przeciwnika...')
-    } else if (game.status === 'finished') {
-      setStatusMsg(game.winner === playerId ? 'Wygrałeś!' : 'Przegrałeś.')
-    }
+    if (game.status === 'waiting') setStatusMsg(`Kod gry: ${game.code} — czekaj na przeciwnika`)
+    else if (game.status === 'placing') setStatusMsg(amIReady ? 'Czekasz na przeciwnika...' : 'Rozmieść swoje statki')
+    else if (game.status === 'playing') setStatusMsg(isMyTurn ? 'Twoja tura — strzelaj!' : 'Tura przeciwnika...')
+    else if (game.status === 'finished') setStatusMsg('')
   }, [game, isMyTurn, amIReady])
 
   if (!game) {
@@ -214,12 +262,18 @@ export default function Game() {
   }
 
   const isPlacing = game.status === 'placing' || game.status === 'waiting'
+  const isFinished = game.status === 'finished'
+  const iWon = game.winner === playerId
 
   const weatherBg: Record<string, string> = {
     calm: 'linear-gradient(160deg, #020b18 0%, #071525 40%, #0a1a30 70%, #010810 100%)',
     storm: 'linear-gradient(160deg, #020d10 0%, #051520 40%, #071825 70%, #020b0e 100%)',
     hurricane: 'linear-gradient(160deg, #030408 0%, #07080f 40%, #0a0b14 70%, #020308 100%)',
   }
+
+  // czas trwania gry
+  const durationSec = gameStartedAt.current ? Math.floor((Date.now() - gameStartedAt.current) / 1000) : 0
+  const durationStr = `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')}`
 
   return (
     <div
@@ -230,8 +284,54 @@ export default function Game() {
       style={{ background: weatherBg[weatherState] }}
     >
       <WeatherOverlay state={weatherState} />
+
+      {/* toast */}
+      {toast && (
+        <div className="pointer-events-none fixed left-1/2 top-16 z-50 -translate-x-1/2 rounded-xl border border-white/10 bg-black/70 px-6 py-3 text-sm tracking-widest text-white backdrop-blur-md">
+          {toast}
+        </div>
+      )}
+
+      {/* ekran końcowy */}
+      {isFinished && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div
+            className="glow-card flex flex-col items-center gap-6 rounded-2xl border border-white/10 px-14 py-12 backdrop-blur-md"
+            style={{ background: 'rgba(255,255,255,0.05)' }}
+          >
+            <h2
+              className={[
+                'text-4xl font-light tracking-widest',
+                iWon ? 'text-green-400' : 'text-red-400',
+              ].join(' ')}
+            >
+              {iWon ? 'WYGRAŁEŚ!' : 'PRZEGRAŁEŚ'}
+            </h2>
+
+            <div className="flex gap-8 text-sm text-white/40">
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-xl text-white">{myShots}</span>
+                <span className="text-xs tracking-widest uppercase">strzałów</span>
+              </div>
+              <div className="w-px bg-white/10" />
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-xl text-white">{durationStr}</span>
+                <span className="text-xs tracking-widest uppercase">czas gry</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => { reset(); navigate('/') }}
+              className="mt-2 w-full rounded-xl border border-blue-400/30 bg-blue-500/20 py-3 text-sm tracking-widest text-blue-200 transition hover:bg-blue-500/30"
+            >
+              NOWA GRA
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* header */}
-      <div className="flex items-center gap-6">
+      <div className="relative z-10 flex items-center gap-6">
         <span className="shimmer-text text-xl font-light tracking-[0.25em]">statki</span>
         <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs tracking-widest text-white/50">
           {game.code}
@@ -239,21 +339,19 @@ export default function Game() {
       </div>
 
       {/* status */}
-      <p className={[
-        'text-sm tracking-wider',
-        game.status === 'finished'
-          ? game.winner === playerId ? 'text-green-400' : 'text-red-400'
-          : isMyTurn ? 'text-blue-300' : 'text-white/50',
-      ].join(' ')}>
-        {statusMsg}
-      </p>
+      {statusMsg && (
+        <p className={[
+          'relative z-10 text-sm tracking-wider',
+          isMyTurn ? 'text-blue-300' : 'text-white/50',
+        ].join(' ')}>
+          {statusMsg}
+        </p>
+      )}
 
       {/* boards */}
-      <div className="flex flex-wrap items-start justify-center gap-8">
-        {/* panel boczny podczas rozmieszczania */}
+      <div className="relative z-10 flex flex-wrap items-start justify-center gap-8">
         {isPlacing && !amIReady && <ShipPanel shipsPlaced={shipsPlaced} />}
 
-        {/* my board */}
         <div className="flex flex-col items-center gap-3">
           <Board
             grid={myBoard.grid}
@@ -284,7 +382,7 @@ export default function Game() {
           })()}
         </div>
 
-        {(game.status === 'playing' || game.status === 'finished') && (
+        {(game.status === 'playing' || isFinished) && (
           <Board
             grid={opponentBoard.grid}
             onCellClick={isMyTurn ? handleShoot : undefined}
@@ -297,7 +395,7 @@ export default function Game() {
 
       <button
         onClick={() => navigate('/')}
-        className="mt-4 text-xs tracking-widest text-white/20 hover:text-white/50 transition"
+        className="relative z-10 mt-4 text-xs tracking-widest text-white/20 transition hover:text-white/50"
       >
         ← lobby
       </button>
