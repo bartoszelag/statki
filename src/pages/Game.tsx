@@ -151,11 +151,9 @@ export default function Game() {
         { event: 'INSERT', schema: 'public', table: 'moves', filter: `game_id=eq.${id}` },
         (payload) => {
           const move = payload.new as Record<string, unknown>
-          const isOpponentMove = move.player_id !== playerId
-          if (isOpponentMove) {
+          // aplikuj tylko ruchy przeciwnika — własne są już aplikowane lokalnie w handleShoot
+          if (move.player_id !== playerId) {
             setMyBoard((prev) => applyMove(prev, move.x as number, move.y as number).board)
-          } else {
-            setOpponentBoard((prev) => applyMove(prev, move.x as number, move.y as number).board)
           }
         },
       )
