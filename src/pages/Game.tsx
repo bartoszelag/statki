@@ -35,6 +35,7 @@ export default function Game() {
   const [shipsPlaced, setShipsPlaced] = useState<Record<number, number>>({})
   const [toast, setToast] = useState<string | null>(null)
   const [hitShake, setHitShake] = useState(false)
+  const [explosionAt, setExplosionAt] = useState<{ x: number; y: number } | null>(null)
 
   // czas rozpoczęcia fazy playing
   const gameStartedAt = useRef<number | null>(null)
@@ -236,10 +237,11 @@ export default function Game() {
     const { isHit, board: newOppBoard } = applyMove(opponentBoard, x, y)
     setOpponentBoard(newOppBoard)
 
-    // efekt trzęsienia ekranu przy trafieniu
+    // efekt wybuchu i trzęsienia ekranu przy trafieniu
     if (isHit) {
+      setExplosionAt({ x, y })
       setHitShake(true)
-      setTimeout(() => setHitShake(false), 450)
+      setTimeout(() => { setExplosionAt(null); setHitShake(false) }, 550)
     }
 
     await supabase.from('moves').insert({ game_id: id, player_id: playerId, x, y, is_hit: isHit })
@@ -397,6 +399,7 @@ export default function Game() {
             onCellClick={isMyTurn ? handleShoot : undefined}
             disabled={!isMyTurn}
             hideShips
+            explosionAt={explosionAt}
             label="Przeciwnik"
           />
         )}

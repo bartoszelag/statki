@@ -1,4 +1,5 @@
 import { type CellState, BOARD_SIZE } from '../types/game'
+import Explosion from './Explosion'
 
 interface BoardProps {
   grid: CellState[][]
@@ -9,6 +10,7 @@ interface BoardProps {
   highlightValid?: boolean
   disabled?: boolean
   hideShips?: boolean
+  explosionAt?: { x: number; y: number } | null
   label: string
 }
 
@@ -32,6 +34,7 @@ export default function Board({
   highlightValid,
   disabled = false,
   hideShips = false,
+  explosionAt = null,
   label,
 }: BoardProps) {
   return (
@@ -54,22 +57,25 @@ export default function Board({
             {row.map((cell, x) => {
               const key = `${x},${y}`
               const isHighlighted = highlightCells?.has(key)
+              const isExploding = explosionAt?.x === x && explosionAt?.y === y
               return (
-                <button
-                  key={x}
-                  disabled={disabled || !onCellClick}
-                  onClick={() => onCellClick?.(x, y)}
-                  onMouseEnter={() => onCellHover?.(x, y)}
-                  className={[
-                    'h-7 w-7 rounded-sm border transition-all duration-100',
-                    isHighlighted
-                      ? highlightValid
-                        ? 'bg-blue-400/50 border-blue-400'
-                        : 'bg-red-400/50 border-red-400'
-                      : cellColor(cell, hideShips),
-                    disabled ? 'cursor-default' : 'cursor-pointer',
-                  ].join(' ')}
-                />
+                <div key={x} className="relative" style={{ overflow: 'visible' }}>
+                  <button
+                    disabled={disabled || !onCellClick}
+                    onClick={() => onCellClick?.(x, y)}
+                    onMouseEnter={() => onCellHover?.(x, y)}
+                    className={[
+                      'h-7 w-7 rounded-sm border transition-all duration-100',
+                      isHighlighted
+                        ? highlightValid
+                          ? 'bg-blue-400/50 border-blue-400'
+                          : 'bg-red-400/50 border-red-400'
+                        : cellColor(cell, hideShips),
+                      disabled ? 'cursor-default' : 'cursor-pointer',
+                    ].join(' ')}
+                  />
+                  {isExploding && <Explosion />}
+                </div>
               )
             })}
           </div>

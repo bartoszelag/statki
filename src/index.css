@@ -118,3 +118,23 @@
 .hit-shake {
   animation: hit-shake 0.45s ease-out;
 }
+
+@keyframes exp-core {
+  0%   { opacity: 1; transform: scale(0.4); }
+  35%  { opacity: 1; transform: scale(1.4); }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+
+@keyframes exp-ring {
+  0%   { transform: scale(0.1); opacity: 0.9; }
+  100% { transform: scale(1);   opacity: 0; }
+}
+
+@keyframes exp-spark {
+  0%   { transform: translate(0, 0) scale(1);   opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+}
+
+.exp-core  { animation: exp-core  0.55s ease-out forwards; }
+.exp-ring  { animation: exp-ring  0.5s  ease-out forwards; }
+.exp-spark { animation: exp-spark 0.45s ease-out forwards; }
