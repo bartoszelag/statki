@@ -1,4 +1,4 @@
-import { BOARD_SIZE, type Board, type Cell, type CellState, type Orientation, type Ship } from '../types/game'
+import { BOARD_SIZE, type Board, type Cell, type CellState, type Orientation, type Ship, type ShipConfig } from '../types/game'
 
 export function createEmptyBoard(): Board {
   return {
@@ -86,4 +86,35 @@ export function allShipsSunk(board: Board): boolean {
 export function canShoot(board: Board, x: number, y: number): boolean {
   const state = board.grid[y][x]
   return state === 'empty' || state === 'ship'
+}
+
+// Losowe rozmieszczenie wszystkich statków zgodnie z zasadami
+export function randomPlacement(configs: ShipConfig[]): Board {
+  const ORIENTATIONS: Orientation[] = ['horizontal', 'vertical']
+
+  for (;;) {
+    let board = createEmptyBoard()
+    let ok = true
+
+    for (const config of configs) {
+      for (let n = 0; n < config.count; n++) {
+        let placed = false
+        for (let tries = 0; tries < 200; tries++) {
+          const orientation = ORIENTATIONS[Math.floor(Math.random() * 2)]
+          const x = Math.floor(Math.random() * BOARD_SIZE)
+          const y = Math.floor(Math.random() * BOARD_SIZE)
+          const cells = getShipCells(x, y, config.size, orientation)
+          if (isValidPlacement(board, cells)) {
+            board = placeShip(board, cells, crypto.randomUUID())
+            placed = true
+            break
+          }
+        }
+        if (!placed) { ok = false; break }
+      }
+      if (!ok) break
+    }
+
+    if (ok) return board
+  }
 }

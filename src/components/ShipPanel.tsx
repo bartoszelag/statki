@@ -3,9 +3,10 @@ import { SHIP_CONFIGS } from '../types/game'
 
 interface ShipPanelProps {
   shipsPlaced: Record<number, number>
+  onRandomize: () => void
 }
 
-export default function ShipPanel({ shipsPlaced }: ShipPanelProps) {
+export default function ShipPanel({ shipsPlaced, onRandomize }: ShipPanelProps) {
   const { selectedShipSize, setSelectedShipSize, placingOrientation, setPlacingOrientation } =
     useGameStore()
 
@@ -17,13 +18,22 @@ export default function ShipPanel({ shipsPlaced }: ShipPanelProps) {
 
       <div className="flex items-center justify-between">
         <span className="text-xs tracking-widest text-white/40 uppercase">Flota</span>
-        <button
-          onClick={() => setPlacingOrientation(placingOrientation === 'horizontal' ? 'vertical' : 'horizontal')}
-          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/60 transition hover:bg-white/10"
-          title="Skrót: R"
-        >
-          OBRÓĆ {placingOrientation === 'horizontal' ? '↔' : '↕'} <span className="opacity-40">[R]</span>
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            onClick={onRandomize}
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/60 transition hover:bg-white/10"
+            title="Losowe rozmieszczenie"
+          >
+            🎲 LOSUJ
+          </button>
+          <button
+            onClick={() => setPlacingOrientation(placingOrientation === 'horizontal' ? 'vertical' : 'horizontal')}
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/60 transition hover:bg-white/10"
+            title="Skrót: R"
+          >
+            OBRÓĆ {placingOrientation === 'horizontal' ? '↔' : '↕'} <span className="opacity-40">[R]</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">

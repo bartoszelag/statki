@@ -9,6 +9,7 @@ import {
   applyMove,
   canShoot,
   createEmptyBoard,
+  randomPlacement,
 } from '../lib/gameLogic'
 import Board from '../components/Board'
 import ShipPanel from '../components/ShipPanel'
@@ -225,6 +226,30 @@ export default function Game() {
     }
   }
 
+  async function handleRandomize() {
+    const newBoard = randomPlacement(SHIP_CONFIGS)
+
+    // usuń istniejące statki z DB i wstaw nowe
+    await supabase.from('ships').delete().eq('game_id', id).eq('player_id', playerId)
+    for (const ship of newBoard.ships) {
+      await supabase.from('ships').insert({
+        id: ship.id,
+        game_id: id,
+        player_id: playerId,
+        cells: ship.cells,
+        size: ship.size,
+      })
+    }
+
+    setMyBoard(newBoard)
+    const placed: Record<number, number> = {}
+    for (const ship of newBoard.ships) {
+      placed[ship.size] = (placed[ship.size] ?? 0) + 1
+    }
+    setShipsPlaced(placed)
+    setSelectedShipSize(null)
+  }
+
   async function handleReady() {
     if (!game) return
     const field = isPlayer1 ? 'player1_ready' : 'player2_ready'
@@ -361,7 +386,7 @@ export default function Game() {
 
       {/* boards */}
       <div className="relative z-10 flex flex-wrap items-start justify-center gap-8">
-        {isPlacing && !amIReady && <ShipPanel shipsPlaced={shipsPlaced} />}
+        {isPlacing && !amIReady && <ShipPanel shipsPlaced={shipsPlaced} onRandomize={handleRandomize} />}
 
         <div className="flex flex-col items-center gap-3">
           <Board
